@@ -2,11 +2,12 @@
 
 var WebSocket = require('ws');
 var fs = require('fs');
-var wss = new WebSocket.Server({ port: 8082 }); //wss.clients
+var port = process.argv[2];
+var wss = new WebSocket.Server({ port: port }); //wss.clients
 var mysql = require('mysql');
 var db;
 function takeConnection() {
-    db = mysql.createConnection({host: 'localhost', user: 'root', password: '', database: 'csgofall'});
+    db = mysql.createConnection({host: '127.0.0.1', user: 'root', password: 'dev', database: 'csgofall'});
     db.connect(function(err) { if(err) setTimeout(takeConnection, 2000); });
     db.on('error', function(err) { takeConnection(); });
 }
@@ -15,8 +16,7 @@ takeConnection();
 var max_chat = 50;
 
 var request = require('request');
-var prices, cachebots = [], cacheusers = {}, cacheredeem = {};
-listPrices();
+var prices, cacheredeem = {};
 
 var pos = [
     [50,25,1.4,1.3,1.2,0.1,1.1,1.1,1.1,1.1,1.1,0.1,1.2,1.3,1.4,25,50],
@@ -24,35 +24,45 @@ var pos = [
     [250,50,20,10,5,3,0,0,0.1,0,0,3,5,10,20,50,250]
 ];
 
+var last_chat_message = null, last_live, last_high;
 setInterval(function(){
-    db.query("SELECT g.id,g.uid,g.mul,g.bet,g.time,g.color,u.username FROM games g LEFT JOIN users u ON u.id=g.uid WHERE (UNIX_TIMESTAMP()-g.time)>9 AND g.bet < 25000 AND u.token!=? ORDER BY g.id DESC LIMIT 1",[token?token:""],function(err,rows){
-        sendAll({type:'GamesLastLive',data:rows});
+    db.query("SELECT g.id,g.uid,g.mul,g.bet,g.time,g.color,u.username FROM games g LEFT JOIN users u ON u.id=g.uid WHERE (UNIX_TIMESTAMP()-g.time)>9 AND g.bet < 25000 ORDER BY g.id DESC LIMIT 1",function(err,rows){
+        if(last_live != rows[0].toString())
+		{
+			last_live = rows[0].toString();
+			sendAll({type:'GamesLastLive',data:rows});
+		}
     });
-    db.query("SELECT g.id,g.uid,g.mul,g.bet,g.time,g.color,u.username FROM games g LEFT JOIN users u ON u.id=g.uid WHERE (UNIX_TIMESTAMP()-g.time)>9 AND g.bet >= 25000 AND u.token!=? ORDER BY g.id DESC LIMIT 1",[token?token:""],function(err,rows){
-        sendAll({type:'GamesLastHigh',data:rows});
+    db.query("SELECT g.id,g.uid,g.mul,g.bet,g.time,g.color,u.username FROM games g LEFT JOIN users u ON u.id=g.uid WHERE (UNIX_TIMESTAMP()-g.time)>9 AND g.bet >= 25000 ORDER BY g.id DESC LIMIT 1",function(err,rows){
+        if(last_high != rows[0].toString())
+		{
+			last_high = rows[0].toString();
+			sendAll({type:'GamesLastHigh',data:rows});
+		}
     });
-    sendOnline();
-},2000); //chat is sent on send
-
-function sendOnline(){
-    db.query("SELECT COUNT(*) AS total_online FROM users WHERE (UNIX_TIMESTAMP()-600) < online",function (err,rows) {
-        if(rows.length < 1) return;
+},2000);
+setInterval(function(){
+	db.query("SELECT COUNT(*) AS total_online FROM users WHERE (UNIX_TIMESTAMP()-600) < online",function (err,rows) {
         sendAll({type:'Online',data:rows[0].total_online});
     });
-}
+	db.query("SELECT message FROM chat ORDER BY id DESC LIMIT 1",function(err,rows){
+		if(last_chat_message != rows[0].message){
+			sendAll({type: 'Chat', data: JSON.parse(rows[0].message)});
+			last_chat_message = rows[0].message;
+		}
+    });
+},5000);
 
 wss.on('connection', function(ws) {
+	//rateLimit(ws);
     ws.on('message', function(msg) {
-        console.log(msg);
+        //console.log(msg);
         try{ msg = JSON.parse(msg); }catch(e){}
         if(msg.hasOwnProperty('type') && msg.hasOwnProperty('data') && msg.hasOwnProperty('token')) {
             var data = msg.data, token = msg.token;
             if(token != null) db.query("UPDATE users SET online=UNIX_TIMESTAMP() WHERE token=?", [token]);
             switch (msg.type) {
                 case 'Join':
-                    /*db.query("SELECT message FROM chat ORDER BY id ASC",function(err,rows){
-                        sendTo(ws, {type: 'ChatCache', data: rows});
-                    });*/
                     sendTo(ws, {type: 'BotsCount', data: bots.length});
                     break;
                 case 'Login':
@@ -67,26 +77,52 @@ wss.on('connection', function(ws) {
                             sendTo(ws, {type: 'ChatError', data: 'Chat is closed'});
                             return;
                         }
-                        db.query("SELECT username, avatar, icon, (UNIX_TIMESTAMP()-last_chat) AS anti_spam, banned, id FROM users WHERE token=?", [token], function (err, rows) {
+                        db.query("SELECT username, balance, avatar, icon, (UNIX_TIMESTAMP()-last_chat) AS anti_spam, banned, id FROM users WHERE token=?", [token], function (err, rows) {
                             if (rows.length < 1) {
                                 sendTo(ws, {type: 'ChatError', data: 'Not signed in!'});
                                 return;
                             }
-                            if(data.)
-                            data = noUrls(data);
+                            if(data.charAt(0) == '/'){
+                                var params = data.split(' ');
+                                switch(params[0]){
+                                    case '/ref':
+                                        askRedeem(token,data,ws,'PlayAlert');
+                                        break;
+                                    case '/ban':
+                                        if(rows[0].icon == 'mod' || rows[0].icon == 'admin'){
+                                            db.query("SELECT id,message FROM chat",function(err,rows){
+                                                for(var k in rows){
+                                                    var msg = JSON.parse(rows[k].message);
+                                                    db.query("SELECT steamid,id FROM users WHERE id=?",[msg.uid],function(err,urows){
+                                                        if(urows.length > 0 && urows[0].steamid == params[1])
+                                                            db.query("DELETE FROM chat WHERE id=?",[urows[0].id]);
+                                                    });
+                                                }
+                                            });
+											db.query("UPDATE users SET banned = NOT banned WHERE steamid=?",[params[1]]);
+                                        }
+                                        break;
+										case '/limit':
+                                        if(rows[0].icon == 'mod' || rows[0].icon == 'admin'){
+											db.query("UPDATE users SET limited = NOT limited WHERE steamid=?",[params[1]]);
+                                        }
+                                        break;
+										case '/alert':
+										sendAll({type: 'PlayAlert', data: params.slice(1).join(' ')});
+										break;
+                                }
+                                return;
+                            }
                             if (data.length <= 250 && data.length >= 2) {
                                 if (rows[0].anti_spam > 2) {
                                     var newmsg = {
                                         username: rows[0].username,
                                         avatar: rows[0].avatar,
-                                        chat: escapeHtml(data),
+                                        chat: noUrls(escapeHtml(data)),
                                         icon: rows[0].icon,
                                         uid: rows[0].id
                                     };
-                                    if (rows[0].banned)
-                                        sendTo(ws, {type: 'Chat', data: newmsg}); //shadow
-                                    else {
-                                        sendAll({type: 'Chat', data: newmsg});
+                                    if (!rows[0].banned){
                                         db.query("INSERT INTO chat(message) VALUES(?)", [JSON.stringify(newmsg)]);
                                         db.query("SELECT COUNT(*) AS count FROM chat", function (err, rows) {
                                             if (rows[0].count > max_chat)
@@ -108,38 +144,33 @@ wss.on('connection', function(ws) {
                             sendTo(ws, {type: 'InventoryError', data: 'Sign in with Steam to see inventory.'});
                             return;
                         }
-                        if(cacheusers[rows[0].steamid] != undefined)
-                            sendTo(ws, {type: 'InventoryError', data: 'You are refreshing too fast.'});
-                        else{
-                            request({url:'https://steamcommunity.com/inventory/' + rows[0].steamid + '/730/2?l=english', headers:{
-                                "Referer": "https://steamcommunity.com/profiles/" + rows[0].steamid + "/inventory"}}, function (err, resp, body) {
-                                try {
-                                    if (!err && resp.statusCode == 200) {
-                                        var rg = JSON.parse(body);
-                                        if (rg.hasOwnProperty('descriptions')) {
-                                            GetItems(rg, function (items) {
-                                                if (items.length > 0) {
-                                                    cacheusers[rows[0].steamid] = true;
-                                                    sendTo(ws, {type: 'Inventory', data: items});
-                                                }
-                                                else
-                                                    sendTo(ws, {type: 'InventoryError', data: 'Try again.'});
-                                            });
-                                        } else
-                                            sendTo(ws, {type: 'InventoryError', data: 'Your inventory is private or empty.'});
-                                    } else
-                                        sendTo(ws, {type: 'InventoryError', data: 'The server was unable to load your inventory.'});
-                                }catch(e){
-                                    sendTo(ws, {type: 'InventoryError', data: 'The server did not generate a response.'});
-                                }
-                            });
-                        }
+						request({url:'https://steamcommunity.com/inventory/' + rows[0].steamid + '/730/2?l=english', headers:{
+							"Referer": "https://steamcommunity.com/profiles/" + rows[0].steamid + "/inventory"}}, function (err, resp, body) {
+							try {
+								if (!err && resp.statusCode == 200) {
+									var rg = JSON.parse(body);
+									if (rg.hasOwnProperty('descriptions')) {
+										GetItems(rg, function (items) {
+											if (items.length > 0)
+												sendTo(ws, {type: 'Inventory', data: items});
+											else
+												sendTo(ws, {type: 'InventoryError', data: 'Try again.'});
+										});
+									} else
+										sendTo(ws, {type: 'InventoryError', data: 'Your inventory is private or empty.'});
+								} else
+									sendTo(ws, {type: 'InventoryError', data: 'The server was unable to load your inventory.'});
+							}catch(e){
+								sendTo(ws, {type: 'InventoryError', data: 'The server did not generate a response.'});
+							}
+						});
                     });
                     break;
                 case 'BotInventory':
                     var pool = parseInt(data);
-                    if(cachebots[pool] == undefined) return;
-                    sendTo(ws,cachebots[pool]);
+                    db.query("SELECT json FROM poll_bots WHERE id=?",[pool],function(err,rows){
+							sendTo(ws,JSON.parse(rows[0].json));
+						});
                     break;
                 case 'SerieReset':
                     db.query("SELECT id AS uid FROM users WHERE token=?",[token],function(err,rows) {
@@ -189,7 +220,7 @@ wss.on('connection', function(ws) {
                     if(!data.hasOwnProperty('amount') || !data.hasOwnProperty('coin')) return;
                     var bet = parseInt(data.amount);
                     if (!isNaN(bet)) {
-                        db.query("SELECT value FROM settings WHERE keyname='min_bet' OR keyname='max_bet'",function(err,rows) {
+                        db.query("SELECT value FROM settings WHERE keyname='min_bet' OR keyname='max_bet' ORDER BY keyname DESC",function(err,rows) {
                             if (rows.length < 2) {
                                 sendTo(ws, {type: 'PlayError', data: 'Unable to bet try again later!'});
                                 return;
@@ -288,7 +319,7 @@ wss.on('connection', function(ws) {
                 case 'Games':
                     switch(data){
                         case 'LIVE':
-                            db.query("SELECT g.id,g.uid,g.mul,g.bet,g.time,g.color,u.username FROM games g LEFT JOIN users u ON u.id=g.uid WHERE (UNIX_TIMESTAMP()-g.time)>9 AND g.bet < 25000 AND u.token!=? ORDER BY g.id DESC LIMIT 50",[token?token:""],function(err,rows){
+                            db.query("SELECT g.id,g.uid,g.mul,g.bet,g.time,g.color,u.username FROM games g LEFT JOIN users u ON u.id=g.uid WHERE (UNIX_TIMESTAMP()-g.time)>9 AND g.bet < 25000 ORDER BY g.id DESC LIMIT 50",function(err,rows){
                                 if(rows.length < 1){
                                     sendTo(ws,{type:'GamesError', data:'No games to display at the moment!'});
                                     return;
@@ -297,7 +328,7 @@ wss.on('connection', function(ws) {
                             });
                             break;
                         case 'HIGH':
-                            db.query("SELECT g.id,g.uid,g.mul,g.bet,g.time,g.color,u.username FROM games g LEFT JOIN users u ON u.id=g.uid WHERE (UNIX_TIMESTAMP()-g.time)>9 AND g.bet >= 25000 AND u.token!=? ORDER BY g.id DESC LIMIT 50",[token?token:""],function(err,rows){
+                            db.query("SELECT g.id,g.uid,g.mul,g.bet,g.time,g.color,u.username FROM games g LEFT JOIN users u ON u.id=g.uid WHERE (UNIX_TIMESTAMP()-g.time)>9 AND g.bet >= 25000 ORDER BY g.id DESC LIMIT 50",function(err,rows){
                                 if(rows.length < 1){
                                     sendTo(ws,{type:'GamesError', data:'No games to display at the moment!'});
                                     return;
@@ -306,7 +337,7 @@ wss.on('connection', function(ws) {
                             });
                             break;
                         case 'MY':
-                            db.query("SELECT g.id,g.uid,g.mul,g.bet,g.time,g.color,u.username FROM games g LEFT JOIN users u ON u.id=g.uid WHERE ((UNIX_TIMESTAMP()-g.time)>9 OR color<0) AND u.token=? ORDER BY g.id DESC LIMIT 50",[token],function(err,rows){
+                            db.query("SELECT g.id,g.uid,g.mul,g.bet,g.time,g.color,u.username FROM games g LEFT JOIN users u ON u.id=g.uid WHERE ((UNIX_TIMESTAMP()-g.time)>9 OR color<0) ORDER BY g.id DESC LIMIT 50",function(err,rows){
                                 if(rows.length < 1){
                                     sendTo(ws,{type:'GamesError', data:'No games to display at the moment!'});
                                     return;
@@ -345,7 +376,7 @@ wss.on('connection', function(ws) {
                     });
                     break;
                 case 'Redeem':
-                    askRedeem(token,data,ws);
+                    askRedeem(token,data,ws,'RedeemError');
                     break;
                 case 'SetRef':
                     db.query("SELECT id FROM users WHERE token=?",[token],function(err,user){
@@ -448,9 +479,7 @@ wss.on('connection', function(ws) {
                                                             offer: offer.id
                                                         }
                                                     });
-                                                    if (status == 'pending') community[pool].acceptConfirmationForObject(bots[pool][1], offer.id, function (err) {
-                                                        //?
-                                                    });
+                                                    if (status == 'pending') community[pool].acceptConfirmationForObject(bots[pool][1], offer.id, function (err) {});
                                                 });
                                             });
                                         });
@@ -547,9 +576,7 @@ wss.on('connection', function(ws) {
                                                             offer: offer.id
                                                         }
                                                     });
-                                                    if (status == 'pending') community[pool].acceptConfirmationForObject(bots[pool][1], offer.id, function (err) {
-                                                        //?
-                                                    });
+													if (status == 'pending') community[pool].acceptConfirmationForObject(bots[pool][1], offer.id, function (err) {});
                                                 });
                                             });
                                         });
@@ -626,14 +653,14 @@ function noUrls(url){
 
 function listPrices(){
     request('https://api.csgofast.com/price/all',function(err,resp,body){
-        prices = body;
+		prices = body;
     });
     setTimeout(listPrices,60000*120);
 }
 function getPrice(market_hash_name){
     var vp = prices.split('"'+market_hash_name+'":');
     if(vp.length > 1)
-        return parseInt(parseInt(parseFloat(vp[1].split(',')[0]).toFixed(2))*1000);
+        return parseInt(parseFloat(vp[1].split(',')[0])*1000);
     return 0;
 }
 function getItemWear(item){
@@ -646,7 +673,7 @@ function getItemWear(item){
     return 'Asset/Case';
 }
 function isTradeUrl(url){
-    return /http(?:s):\/\/steamcommunity.com\/tradeoffer\/new\/\?partner=([0-9]+)&token=(.*)/.test(url);
+    return /http(?:s):\/\/steamcommunity.com\/tradeoffer\/new\/\?partner=([0-9]+)&token=([a-zA-Z0-9-_]+)/.test(url);
 }
 
 function createNotification(uid,value,type,offer,bot){ //type => 0:Withdraw 1:Pending Withdraw 2:Deposit 3:Pending Deposit
@@ -664,6 +691,14 @@ function success_withdraw(offer,uid,total,bot){
 function deleteOffer(id){
     db.query("DELETE FROM notifications WHERE offer=?", [id]);
 }
+function cancelOffer(offer){
+    db.query("SELECT uid,value,type FROM notifications WHERE offer=? AND (type=3 OR type=1)", [offer.id], function (err, rows) {
+        if (rows.length > 0) {
+            deleteOffer(offer.id);
+            db.query("INSERT INTO poll_trades(json) VALUES(?)",[JSON.stringify({type: 'OfferDeclined', data: {offer:offer.id}})]);
+        }
+    });
+}
 
 var crypto = require('crypto');
 function getSHA1(data){
@@ -672,7 +707,7 @@ function getSHA1(data){
 function getToken(){
     return getSHA1(crypto.randomBytes(64).toString('hex'));
 }
-function askRedeem(token,data,ws){
+function askRedeem(token,data,ws,alert){
     db.query("SELECT redeemed,id,steamid FROM users WHERE token=?",[token],function(err,rows){
         if(rows.length > 0){
             if(rows[0].redeemed < 1){
@@ -680,36 +715,40 @@ function askRedeem(token,data,ws){
                     if(is_open[0].value) {
                         if(cacheredeem[rows[0].steamid] == undefined) cacheredeem[rows[0].steamid] = 0;
                         if(cacheredeem[rows[0].steamid]>3){
-                            sendTo(ws, {type:'RedeemError',data:'Retry later.'});
+                            sendTo(ws, {type:alert,data:'Retry later.'});
                             return;
                         }
                         db.query("SELECT value,id FROM codes WHERE code=? AND uid!=?", [data, rows[0].id], function (err, code) {
                             if (code.length < 1) {
-                                sendTo(ws, {type: 'RedeemError', data: 'Invalid code'});
+                                sendTo(ws, {type: alert, data: 'Invalid code'});
                                 return;
                             }
                             db.query("UPDATE users SET balance=balance+?, redeemed=? WHERE id=?", [code[0].value, code[0].id, rows[0].id]);
                             db.query("UPDATE codes SET claimed=claimed+1 WHERE id=?", [code[0].id]);
-                            sendTo(ws, {type: 'RedeemSuccess', data: code[0].value});
+                            sendTo(ws, {type: (alert=='PlayAlert'?alert:'RedeemSuccess'), data: code[0].value});
                         });
                     }else
-                        sendTo(ws, {type:'RedeemError',data:'Codes disabled'});
+                        sendTo(ws, {type:alert,data:'Codes are disabled'});
                 });
             }else
-                sendTo(ws, {type:'RedeemError',data:'You claimed already'});
+                sendTo(ws, {type:alert,data:'You claimed already'});
         }else
-            sendTo(ws, {type:'RedeemError',data:'Not logged in'});
+            sendTo(ws, {type:alert,data:'Not logged in'});
     });
 }
 
 setInterval(function(){
-    cacheusers = {};
-},30000);
+	db.query("SELECT json,id FROM poll_trades ORDER BY id ASC",function(err,rows){
+		for(var k in rows){
+			sendAll(JSON.parse(rows[k].json));
+			db.query("DELETE FROM poll_trades WHERE id=?",[rows[k].id]);
+		}
+	});
+},1000);
 setInterval(function(){
     cacheredeem = {};
 },60000*2);
-
-/** STEAM BOT **/
+listPrices();
 
 var SteamUser = require('steam-user');
 var SteamCommunity = require('steamcommunity');
@@ -721,7 +760,10 @@ var managers = [];
 var community = [];
 
 var bots = [
-    //bots data
+    //[{"accountName": "Flitterleaf", "password": ":,ZQb$dL?S8F", "twoFactorCode": SteamTotp.getAuthCode("QQZIvXfImr5J1lpeZPQJkpXEYTc=")}, "L8Hq2Q+OAq5eMeX+71oT53DQUCY="],
+    [{"accountName": "pikantilope3", "password": "Penispumpe444", "twoFactorCode": SteamTotp.getAuthCode("B1mzvMvBwmiXEMLhOmHaSr5fOF4=")}, "p/HAEo4txr/22YrpEo6QzcjlCfc="],
+    [{"accountName": "pikantilope555", "password": "Penispumpe444", "twoFactorCode": SteamTotp.getAuthCode("vmvPz8tA+ke5FCXodFw68ORUYiY=")}, "0mOj+Lyy8fvhCe3Fc8hsld9sug8="],
+    [{"accountName": "pikantilope6666", "password": "Penispumpe444", "twoFactorCode": SteamTotp.getAuthCode("xoyjhnlT4mn42gqf0HcD2xjNg5c=")}, "jmY/X0hUbEf1EScDkhloc5y9+QM="],
 ];
 
 var funcs = [];
@@ -729,81 +771,51 @@ for(var y=0; y<bots.length; y++) {
     funcs[y] = (function(i) {
         return function () {
             clients[i] = new SteamUser();
-            managers[i] = new TradeOfferManager({steam: clients[i], language: "en", cancelTime: 60000*5});
+            managers[i] = new TradeOfferManager({language: "en", cancelTime: 1000*60*7});
             community[i] = new SteamCommunity();
 
-            if (fs.existsSync('polldata/polldata'+i+'.json')) managers[i].pollData = JSON.parse(fs.readFileSync('polldata/polldata'+i+'.json'));
             clients[i].logOn(bots[i][0]);
             clients[i].on('loggedOn', function () {console.log("Logged into Steam #" + i);});
             clients[i].on('webSession', function (sessionID, cookies) {
                 managers[i].setCookies(cookies, function (err) {
-                    if (err) console.log(err);
                     console.log("Got API key: " + managers[i].apiKey);
                 });
                 community[i].setCookies(cookies);
                 updateCacheBots(i);
-                setInterval(updateCacheBots,30000,i);
-            });
-            managers[i].on('sentOfferChanged', function (offer, oldState) {
-                console.log(`Offer #${offer.id} changed: ${TradeOfferManager.ETradeOfferState[oldState]} -> ${TradeOfferManager.ETradeOfferState[offer.state]}`);
-                processOffer(offer,i);
+                setInterval(updateCacheBots,20000,i);
             });
             managers[i].on('unknownOfferSent', function(offer){
                 offer.cancel();
             });
-            managers[i].on('pollData', function (pollData) {
-                fs.writeFile('polldata/polldata' + i + '.json', JSON.stringify(pollData));
-            });
-            setInterval(function(){
-                db.query("SELECT offer FROM notifications WHERE time<UNIX_TIMESTAMP()-360 AND (type=3 OR type=1)",function(err,rows){
-                    for(var k in rows) {
-                        managers[i].getOffer(rows[k].offer, function (err, offer) {
-                            if (err) {
-                                cancelOffer({id: rows[k].offer});
-                                return;
-                            }
-                            if (offer.state == TradeOfferManager.ETradeOfferState.Active)
-                                offer.cancel(function () {
-                                    cancelOffer(offer);
-                                });
-                            else
-                                processOffer(offer, i);
-                        });
-                    }
-                });
-            },60000);
+			managers[i].on('sentOfferChanged', function(offer, oldState) {
+				console.log("Offer: "+offer.id+" - State: "+TradeOfferManager.ETradeOfferState[offer.state]);
+				if(offer.state == TradeOfferManager.ETradeOfferState.Accepted){
+					db.query("SELECT * FROM notifications WHERE offer=?",[offer.id],function(err,nrows){
+						var data = nrows[0];
+						if(data.type == 3 || data.type == 1){
+							if(data.type == 3)
+								db.query("UPDATE users SET balance=balance+? WHERE id=?",[data.value,data.uid]);
+							db.query("INSERT INTO poll_trades(json) VALUES(?)",[JSON.stringify({type: 'OfferComplete', data:{offer: offer.id, total: data.value, type: data.type}})]);
+							db.query("UPDATE notifications SET type=? WHERE offer=?",[data.type-1,offer.id]);
+						}
+					});
+				}
+				else if(offer.state != TradeOfferManager.ETradeOfferState.Active && offer.state != TradeOfferManager.ETradeOfferState.CreatedNeedsConfirmation && offer.state != TradeOfferManager.ETradeOfferState.InEscrow){
+					db.query("DELETE FROM notifications WHERE offer=?",[offer.id]);
+					db.query("INSERT INTO poll_trades(json) VALUES(?)",[JSON.stringify({type: 'OfferDeclined', data:{offer: offer.id}})]);
+				}
+			});
+			if (fs.existsSync('/var/www/server/polldata'+i+'.json'))
+				managers[i].pollData = JSON.parse(fs.readFileSync('/var/www/server/polldata'+i+'.json'));
+			managers[i].on('pollData', function(pollData) {
+				fs.writeFile('/var/www/server/polldata'+i+'.json', JSON.stringify(pollData), function() {});
+			});
         }
     }(y));
 }
-function processOffer(offer,i){
-    if (offer.state == TradeOfferManager.ETradeOfferState.Accepted) {
-        db.query("SELECT uid,value,type FROM notifications WHERE offer=? AND (type=3 OR type=1)", [offer.id], function (err, rows) {
-            if (rows.length > 0) {
-                if (rows[0].type > 1)
-                    success_deposit(offer.id, rows[0].uid, rows[0].value, i);
-                else
-                    success_withdraw(offer.id, rows[0].uid, rows[0].value, i);
-                sendAll({type: 'OfferComplete', data: {total:rows[0].value, offer:offer.id, type:rows[0].type}});
-            }
-        });
-    }
-    else if(offer.state == TradeOfferManager.ETradeOfferState.Countered
-        || offer.state == TradeOfferManager.ETradeOfferState.Canceled
-        || offer.state == TradeOfferManager.ETradeOfferState.Invalid
-        || offer.state == TradeOfferManager.ETradeOfferState.Expired
-        || offer.state == TradeOfferManager.ETradeOfferState.CanceledBySecondFactor
-        || offer.state == TradeOfferManager.ETradeOfferState.InvalidItems
-        || offer.state == TradeOfferManager.ETradeOfferState.Declined)
-        offer.cancel(function(){ cancelOffer(offer); });
-}
-function cancelOffer(offer){
-    db.query("SELECT uid,value,type FROM notifications WHERE offer=? AND (type=3 OR type=1)", [offer.id], function (err, rows) {
-        if (rows.length > 0) {
-            deleteOffer(offer.id);
-            sendAll({type: 'OfferDeclined', data: {offer:offer.id}});
-        }
-    });
-}
+for (var j = 0; j < bots.length; j++) funcs[j]();
+process.on('uncaughtException', function (err) { fs.writeFile('/var/www/server/errors'+port+'.txt',err.stack+"\n"); }); //!
+
 function updateCacheBots(pool){
     var steamID = clients[pool].steamID.getSteamID64();
     request({url:'https://steamcommunity.com/inventory/' + steamID + '/730/2?l=english', headers:{
@@ -813,13 +825,11 @@ function updateCacheBots(pool){
             if (!err && resp.statusCode == 200 && rg.hasOwnProperty('descriptions')) {
                 GetItems(rg, function (items) {
                     if (items.length > 0)
-                        cachebots[pool] = {type: 'BotInventory', data: [items]};
+                        db.query("REPLACE INTO poll_bots(id,json) VALUES(?,?)",[pool,JSON.stringify({type: 'BotInventory', data: [items]})]);
                 }, true);
             }
         }catch(e){
-            cachebots[pool] = {type: 'BotInventoryError', data: 'The server was unable to load items.'};
+            db.query("REPLACE INTO poll_bots(id,json) VALUES(?,?)",[pool,JSON.stringify({type: 'BotInventoryError', data: 'The server was unable to load items.'})]);
         }
     });
 }
-for (var j = 0; j < bots.length; j++) funcs[j]();
-process.on('uncaughtException', function (err) { fs.writeFile('errors.txt',err.stack+"\n"); }); //!
