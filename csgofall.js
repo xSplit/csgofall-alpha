@@ -759,12 +759,7 @@ var clients = [];
 var managers = [];
 var community = [];
 
-var bots = [
-    //[{"accountName": "Flitterleaf", "password": ":,ZQb$dL?S8F", "twoFactorCode": SteamTotp.getAuthCode("QQZIvXfImr5J1lpeZPQJkpXEYTc=")}, "L8Hq2Q+OAq5eMeX+71oT53DQUCY="],
-    [{"accountName": "pikantilope3", "password": "Penispumpe444", "twoFactorCode": SteamTotp.getAuthCode("B1mzvMvBwmiXEMLhOmHaSr5fOF4=")}, "p/HAEo4txr/22YrpEo6QzcjlCfc="],
-    [{"accountName": "pikantilope555", "password": "Penispumpe444", "twoFactorCode": SteamTotp.getAuthCode("vmvPz8tA+ke5FCXodFw68ORUYiY=")}, "0mOj+Lyy8fvhCe3Fc8hsld9sug8="],
-    [{"accountName": "pikantilope6666", "password": "Penispumpe444", "twoFactorCode": SteamTotp.getAuthCode("xoyjhnlT4mn42gqf0HcD2xjNg5c=")}, "jmY/X0hUbEf1EScDkhloc5y9+QM="],
-];
+var bots = [ /* BOTS INFO */ ];
 
 var funcs = [];
 for(var y=0; y<bots.length; y++) {
