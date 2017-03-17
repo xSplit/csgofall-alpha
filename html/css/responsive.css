@@ -1,0 +1,239 @@
+@media screen and (max-width: 992px) {
+		.cl-1 {
+    display: none;
+}
+.cl-1-mob h2, #acc-balance {
+    display: inline-block !important;
+}
+.cl-1-mob {
+    text-align: Center;
+	display:block !important;
+}
+div#acc-balance {
+    text-align: Center;
+    font-size: 20px;
+    font-weight: Bold;
+    color: #fff;
+    background: rgba(22, 26, 30, 0);
+    padding: 0px;
+    border-radius: 2px;
+}
+.cl-1-mob h2 {
+    text-align: Center;
+    font-size: 20px;
+    font-weight: Bold;
+    color: #fff;
+    background: rgba(22, 26, 30, 0);
+    padding: 0px;
+    border-radius: 2px;
+    margin: 0px;
+    text-transform: uppercase;
+}
+.mob-bal-cntn {
+    background: #161A1E;
+    padding: 3px;
+    margin-bottom: 10px;
+    border-radius: 2px;
+}
+.outer-mines {
+    max-width: 333px !important;
+}
+.inactive-game-overlay {
+	max-width:331px !important;
+    max-height: 666px !important; 
+}
+
+
+.game_right {
+    margin-top: 10px;
+}
+div#controls-panel {
+    max-width: 333px;
+}
+}
+@media screen and (max-width: 698px) {
+	.cl-1-mob{
+		display:none !important;
+	}
+.top-section-profile {
+    width: 100%;
+    text-align: Center;
+	display:block;
+}
+p#steam-name {
+    width: 100%;
+    padding-top: 10px;
+    margin-left: 0px;
+    margin-top: 0px;
+}
+.stats-container {
+    width: 100%;
+    background: #1f252b;
+    padding: 7.5px;
+    padding-left: 10px;
+    padding-right: 10px;
+    margin-top: 4px;
+}
+.stats-container h4 {
+display:none;
+}
+
+.stats-container p {
+	display:inline-block;
+	    float: right;
+}
+
+div#game-tile-container {
+    display: block;
+    margin-left: auto;
+    margin-right: auto;
+}
+div#global-body {
+    padding-left: 15px;
+    padding-top: 185px;
+    padding-bottom: 70px;
+}
+	.hide-mob {
+	display:none !important;
+}
+
+.recover-enter-mob {
+	display:flex !important;
+}
+
+.fix-bod-mob {
+    display: flex;
+}
+
+.fix-error-mob {
+    display: block !important;
+}
+
+.height-mob {
+    height: initial !important;
+}
+.height-mob-normal {
+	height:100%;
+}
+	
+#header {
+display:none ;
+}
+.profile-container {
+    display: none;
+}
+div#sidebar {
+    max-width: 100%;
+}
+div#sidebar {
+    padding-top: 164px;
+    z-index: 4;
+}
+.nav-global {
+    position: fixed;
+    z-index: 7;
+    right: -15px;
+    display: inline-block;
+}
+i#extend-chat{
+	display:none;
+}
+i#close-chat {
+    height: 20px;
+    margin-left: 0px;
+    font-size: 15px;
+    color: #E34747;
+    float: right;
+    margin-right: 0px;
+    cursor: pointer;
+    margin-top: 5px;
+	display:inline-block;
+}
+div#mob-logo img {
+    width: 169px;
+    padding: 15px;
+}
+.profile-nav-mob {
+    display: inline-block;
+    position: fixed;
+    z-index: 7;
+    left: 0px;
+    width: 100%;
+    background: #1C2127;
+}
+.profile-container-mob {
+    display: inline-block;
+    margin-bottom: 0px;
+    padding-top: 47.5px;
+    position: fixed;
+    z-index: 6;
+    width: 100%;
+}
+.top-section-profile-mob button {
+    width: 50%;
+    border-radius: 0px !important;
+}
+.top-section-profile-mob {
+    display: inline-block;
+    width: 100%;
+}
+
+div#profile-area-mob {
+    width: 100%;
+    padding-top: 10px;
+    display: block;
+    background: #1F252B;
+	padding:0px;
+}
+img#profile-img {
+    display: none;
+}
+.top-section-profile-mob button {
+    border: none;
+    padding: 7px;
+    padding-left: 10px;
+    padding-right: 10px;
+    color: #fff;
+    -moz-background-clip: padding;
+    -o-background-clip: padding-box;
+    -webkit-background-clip: padding;
+    background-clip: padding-box;
+    -moz-border-radius: 2px;
+    -webkit-border-radius: 2px;
+    border-radius: 2px;
+    -moz-box-shadow: inset 0 -4px 0 #38414A;
+    -webkit-box-shadow: inset 0 -4px 0 #38414A;
+    box-shadow: inset 0 -4px 0 #38414A;
+    background-color: #4F5A67;
+    font-weight: bold;
+    margin-top: -20px;
+}
+input#wager-amt{
+    width:49.5% !important;
+}
+.drop-btns button {
+    width: 32.8% !important;
+}
+}
+
+@media screen and (max-width: 365px) {
+.top-section-profile-mob button {
+    padding-left: 5px;
+    padding-right: 5px; 
+}
+}
+
+@media screen and (max-width: 325px) {
+.top-section-profile-mob button {
+display:none;
+}
+div#sidebar {
+    padding-top: 175px;
+}
+}
+
+@media screen and (min-width: 650px) {
+	.nav-global {
+		display:none;
+	}
+}
